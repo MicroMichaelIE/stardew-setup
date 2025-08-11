@@ -55,7 +55,9 @@ GAME_PORT=${GAME_PORT:-24643}
 VNC_PORT=${VNC_PORT:-8090}
 INSTALL_DIR_DEFAULT="$HOME/junimoserver"
 INSTALL_DIR=${INSTALL_DIR:-$INSTALL_DIR_DEFAULT}
-REPO_URL="https://github.com/stardew-valley-dedicated-server/server.git"
+REPO_URL=${REPO_URL:-"https://github.com/cavazos-apps/stardew-multiplayer-docker.git"}
+REPO_REF=${REPO_REF:-""}
+SERVICE_NAME=${SERVICE_NAME:-"stardew"}
 SETUP_BINFMT=1
 FORCE_ENV=0
 
@@ -68,6 +70,9 @@ while [[ $# -gt 0 ]]; do
     -g|--game-port) GAME_PORT=${2:-24643}; shift 2;;
     -w|--vnc-port) VNC_PORT=${2:-8090}; shift 2;;
     -d|--dir) INSTALL_DIR=${2:-$INSTALL_DIR_DEFAULT}; shift 2;;
+  --repo) REPO_URL=${2:-$REPO_URL}; shift 2;;
+  --ref) REPO_REF=${2:-}; shift 2;;
+  --service-name) SERVICE_NAME=${2:-}; shift 2;;
     --no-binfmt) SETUP_BINFMT=0; shift;;
     --force) FORCE_ENV=1; shift;;
     -h|--help) usage; exit 0;;
@@ -150,12 +155,37 @@ fi
 
 pushd "$INSTALL_DIR_EXPANDED" >/dev/null
 
+# Checkout ref if provided
+if [[ -n "$REPO_REF" ]]; then
+  log "Checking out ref: $REPO_REF"
+  git fetch --all --tags --prune
+  git checkout "$REPO_REF"
+fi
+
+# Detect primary service name from docker-compose.yml if not provided
+if [[ -z "$SERVICE_NAME" ]]; then
+  if [[ -f docker-compose.yml ]]; then
+    SERVICE_NAME=$(awk '
+      $0 ~ /^services:/ {inservices=1; next}
+      inservices && match($0, /^[[:space:]]+([A-Za-z0-9_.-]+):/, m) { print m[1]; exit }
+    ' docker-compose.yml)
+  fi
+  SERVICE_NAME=${SERVICE_NAME:-stardew}
+fi
+log "Using service name: $SERVICE_NAME"
+
 # Create compose override to force amd64 on ARM and set restart policy
 cat > docker-compose.override.yml <<YAML
 services:
-  stardew:
+  ${SERVICE_NAME}:
     platform: linux/amd64
     restart: unless-stopped
+    shm_size: "512m"
+    environment:
+      DISPLAY_WIDTH: "1024"
+      DISPLAY_HEIGHT: "768"
+      LIBGL_ALWAYS_SOFTWARE: "1"
+  S6_CMD_WAIT_FOR_SERVICES_MAXTIME: "120000"
 YAML
 
 # Generate .env if not present or --force

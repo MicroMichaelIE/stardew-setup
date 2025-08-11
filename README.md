@@ -34,7 +34,9 @@ env STEAM_USER=you STEAM_PASS=secret VNC_PASSWORD=changeme bash ./deploy_stardew
 # Or with flags:
 bash ./deploy_stardew.sh \
   --steam-user you --steam-pass secret --vnc-password changeme \
-  --steam-guard-code 12345 --game-port 24643 --vnc-port 8090 --dir ~/junimoserver
+  --steam-guard-code 12345 --game-port 24643 --vnc-port 8090 --dir ~/junimoserver \
+  --repo https://github.com/cavazos-apps/stardew-multiplayer-docker.git --ref main \
+  --service-name stardew
 ```
 
 Notes:
@@ -46,3 +48,30 @@ Notes:
 Router port forwarding:
 - Forward UDP GAME_PORT (default 24643) and TCP VNC_PORT (default 8090) to the Pi.
 - Connect externally using your DuckDNS domain.
+
+### Troubleshooting: Openbox/Web VNC keeps restarting
+
+Symptoms: container restarts, VNC never loads, logs mention Openbox failing.
+
+Quick fixes applied by deploy script:
+- Forces linux/amd64 on ARM and enables qemu binfmt
+- Sets smaller VNC display (1024x768) and software GL
+- Increases /dev/shm to 512m
+
+What to check next:
+```bash
+cd ~/junimoserver
+docker compose logs -f --tail=200
+docker inspect $(docker compose ps -q stardew) --format '{{.HostConfig.ShmSize}}'
+uname -m && docker info --format '{{json .Plugins.Binfmt}}'
+```
+
+If it still loops:
+- Recreate with a clean start:
+```bash
+docker compose down
+docker compose pull
+docker compose up -d
+```
+- Try headless mode (skip GUI) by setting DISABLE_RENDERING=true in .env (already defaulted).
+- Ensure the Pi has at least 2GB swap and adequate free RAM.
